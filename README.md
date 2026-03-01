@@ -14,6 +14,18 @@ conda activate beacon
 conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia
 pip install transformers deepspeed accelerate datasets peft pandas seaborn rouge fuzzywuzzy jieba python-Levenshtein
 pip install flash-attn --no-build-isolation
+
+# Environment
+Use one unified Python environment managed by `uv`.
+
+
+# Optional: TUNA mirror (mainland China)
+uv lock --default-index "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+uv sync --default-index "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+
+# Default index
+# uv sync
+
 ```
 
 ## Usage

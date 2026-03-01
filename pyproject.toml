@@ -1,0 +1,47 @@
+[project]
+name = "activation_beacon"
+version = "0.1.0"
+description = "Activation Beacon training and evaluation code."
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "accelerate>=0.30",
+    "datasets>=2.18",
+    "deepspeed>=0.14",
+    "flash-attn>=2.5.8; platform_system == 'Linux' and platform_machine == 'x86_64'",
+    "fuzzywuzzy>=0.18.0",
+    "jieba>=0.42.1",
+    "matplotlib>=3.8",
+    "ninja>=1.11",
+    "numpy>=1.26",
+    "packaging>=24.0",
+    "pandas>=2.2",
+    "peft>=0.10",
+    "python-levenshtein>=0.25",
+    "pytz>=2024.1",
+    "rouge>=1.0.1",
+    "seaborn>=0.13",
+    "torch>=2.3,<2.8",
+    "tqdm>=4.66",
+    "transformers>=4.40,<5",
+]
+
+[project.optional-dependencies]
+vllm = [
+    "vllm>=0.5",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+no-build-isolation-package = ["flash-attn"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu121", marker = "platform_system == 'Linux' and platform_machine == 'x86_64'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
