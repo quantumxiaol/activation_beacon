@@ -38,6 +38,9 @@ build-backend = "setuptools.build_meta"
 [tool.uv]
 no-build-isolation-package = ["flash-attn"]
 
+[tool.uv.extra-build-dependencies]
+flash-attn = ["setuptools>=69", "wheel"]
+
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu121", marker = "platform_system == 'Linux' and platform_machine == 'x86_64'" }]
 
