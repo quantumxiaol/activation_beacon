@@ -21,9 +21,11 @@ dependencies = [
     "pytz>=2024.1",
     "rouge>=1.0.1",
     "seaborn>=0.13",
+    "setuptools>=69",
     "torch>=2.3,<2.8",
     "tqdm>=4.66",
     "transformers>=4.40,<5",
+    "wheel>=0.43",
 ]
 
 [project.optional-dependencies]
