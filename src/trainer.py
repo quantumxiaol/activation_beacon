@@ -44,15 +44,20 @@ class ActivationBeaconTrainer(Trainer):
             del self.model.memory._retrieval_condensing_ratios
         return outputs
     
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+    def _get_train_sampler(self, train_dataset: Optional[Dataset] = None) -> Optional[torch.utils.data.Sampler]:
         # Build the sampler.
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
+
         if self.args.group_by_stride is not None:
-            if is_datasets_available() and isinstance(self.train_dataset, datasets.Dataset):
-                lengths = self.train_dataset[self.args.length_column_name]
+            if is_datasets_available() and isinstance(dataset, datasets.Dataset):
+                lengths = dataset[self.args.length_column_name]
             else:
                 lengths = None
-            
-            model_input_name = self.tokenizer.model_input_names[0] if self.tokenizer is not None else None
+
+            processor = getattr(self, "processing_class", None)
+            if processor is None:
+                processor = self.tokenizer
+            model_input_name = processor.model_input_names[0] if processor is not None else None
 
             return StrideGroupedSampler(
                 # NOTE: multiply world size to get the total number of training instances across devices
@@ -61,13 +66,17 @@ class ActivationBeaconTrainer(Trainer):
                 stride=self.model.memory.config.beacon_stride,
                 group=self.args.group_by_stride,
                 sort=self.args.sort_by_stride,
-                dataset=self.train_dataset,
+                dataset=dataset,
                 lengths=lengths,
                 model_input_name=model_input_name,
             )
 
         else:
-            return super()._get_train_sampler()
+            # Compatible with both old/new transformers signatures.
+            try:
+                return super()._get_train_sampler(dataset)
+            except TypeError:
+                return super()._get_train_sampler()
     
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         outputs = super()._save(output_dir, state_dict)
