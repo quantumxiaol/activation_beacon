@@ -17,9 +17,41 @@ from src.trainer import ActivationBeaconTrainer
 logger = logging.getLogger(__name__)
 
 
+def _patch_deepspeed_grad_fn_compat() -> bool:
+    """Patch DeepSpeed's grad-fn probe for torch versions where it may return None."""
+    try:
+        import torch
+        from deepspeed.runtime import utils as ds_runtime_utils
+    except Exception:
+        return False
+
+    if getattr(ds_runtime_utils, "_activation_beacon_grad_fn_patch", False):
+        return True
+
+    def _safe_get_grad_fn_or_grad_acc(t):
+        if t is None:
+            return None
+        if t.requires_grad and t.grad_fn is None:
+            with torch.enable_grad():
+                grad_fn = t.view_as(t).grad_fn
+            if grad_fn is None or len(grad_fn.next_functions) == 0:
+                return None
+            return grad_fn.next_functions[0][0]
+        return t.grad_fn
+
+    ds_runtime_utils._get_grad_fn_or_grad_acc = _safe_get_grad_fn_or_grad_acc
+    ds_runtime_utils._activation_beacon_grad_fn_patch = True
+    return True
+
+
 def main():
     parser = HfArgumentParser([ModelArgs, TrainingArgs])
     model_args, training_args = parser.parse_args_into_dataclasses()
+
+    if training_args.deepspeed is not None and _patch_deepspeed_grad_fn_compat():
+        logger.warning(
+            "Applied DeepSpeed grad-fn compatibility patch for current torch/deepspeed versions."
+        )
 
     model, tokenizer = get_model_and_tokenizer(model_args, device="cuda", evaluation_mode=False)
 
