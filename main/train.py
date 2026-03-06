@@ -18,30 +18,61 @@ logger = logging.getLogger(__name__)
 
 
 def _patch_deepspeed_grad_fn_compat() -> bool:
-    """Patch DeepSpeed's grad-fn probe for torch versions where it may return None."""
+    """Patch DeepSpeed/Torch grad-fn probes to avoid NoneType crashes on frozen params."""
     try:
         import torch
+        import torch.autograd.graph as torch_graph
         from deepspeed.runtime import utils as ds_runtime_utils
     except Exception:
         return False
 
-    if getattr(ds_runtime_utils, "_activation_beacon_grad_fn_patch", False):
-        return True
+    patched = False
 
-    def _safe_get_grad_fn_or_grad_acc(t):
-        if t is None:
-            return None
-        if t.requires_grad and t.grad_fn is None:
-            with torch.enable_grad():
-                grad_fn = t.view_as(t).grad_fn
-            if grad_fn is None or len(grad_fn.next_functions) == 0:
+    if not getattr(torch_graph, "_activation_beacon_grad_fn_patch", False):
+        original_get_grad_fn = torch_graph._get_grad_fn_or_grad_acc
+
+        def _safe_get_grad_fn_or_grad_acc(t):
+            if t is None:
                 return None
-            return grad_fn.next_functions[0][0]
-        return t.grad_fn
+            try:
+                return original_get_grad_fn(t)
+            except AttributeError:
+                if not getattr(t, "requires_grad", False):
+                    return None
+                # On some torch/deepspeed combinations, t.view_as(t).grad_fn can be None.
+                with torch.enable_grad():
+                    grad_fn = t.view_as(t).grad_fn
+                if grad_fn is None or len(grad_fn.next_functions) == 0:
+                    return None
+                return grad_fn.next_functions[0][0]
 
-    ds_runtime_utils._get_grad_fn_or_grad_acc = _safe_get_grad_fn_or_grad_acc
-    ds_runtime_utils._activation_beacon_grad_fn_patch = True
-    return True
+        torch_graph._get_grad_fn_or_grad_acc = _safe_get_grad_fn_or_grad_acc
+        torch_graph._activation_beacon_grad_fn_patch = True
+        patched = True
+
+    if not getattr(ds_runtime_utils, "_activation_beacon_grad_fn_patch", False):
+        # Keep DeepSpeed's reference in sync with patched torch helper.
+        ds_runtime_utils._get_grad_fn_or_grad_acc = torch_graph._get_grad_fn_or_grad_acc
+        ds_runtime_utils._activation_beacon_grad_fn_patch = True
+        patched = True
+
+    if not getattr(ds_runtime_utils, "_activation_beacon_count_patch", False):
+        def _safe_count_used_parameters_in_backward(params):
+            used = 0
+            for param in params:
+                try:
+                    grad_fn = ds_runtime_utils._get_grad_fn_or_grad_acc(param)
+                except Exception:
+                    grad_fn = None
+                if grad_fn is not None:
+                    used += 1
+            return used
+
+        ds_runtime_utils.count_used_parameters_in_backward = _safe_count_used_parameters_in_backward
+        ds_runtime_utils._activation_beacon_count_patch = True
+        patched = True
+
+    return patched or getattr(ds_runtime_utils, "_activation_beacon_grad_fn_patch", False)
 
 
 def main():
