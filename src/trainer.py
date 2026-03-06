@@ -1,5 +1,6 @@
 import os
 import math
+import inspect
 import torch
 import datasets
 import random
@@ -20,8 +21,11 @@ class ActivationBeaconTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.model_args = model_args
         self.file_logger = file_logger
+        self._trainer_compute_loss_accepts_num_items_in_batch = (
+            "num_items_in_batch" in inspect.signature(Trainer.compute_loss).parameters
+        )
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None, **kwargs):
         if "retrieval_span" in inputs:
             self.model.memory._retrieval_span = inputs['retrieval_span'][0]
             inputs.pop("retrieval_span")
@@ -37,7 +41,21 @@ class ActivationBeaconTrainer(Trainer):
         if hasattr(self.model, "memory"):
             self.model.memory.reset()
 
-        outputs = super().compute_loss(model, inputs, return_outputs)
+        if self._trainer_compute_loss_accepts_num_items_in_batch:
+            outputs = super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                num_items_in_batch=num_items_in_batch,
+                **kwargs,
+            )
+        else:
+            outputs = super().compute_loss(
+                model,
+                inputs,
+                return_outputs=return_outputs,
+                **kwargs,
+            )
 
         if hasattr(self.model, "memory") and hasattr(self.model.memory, "_retrieval_span"):
             del self.model.memory._retrieval_span

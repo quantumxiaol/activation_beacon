@@ -25,8 +25,7 @@ def main():
 
     if model_args.enable_beacon and training_args.only_train_beacon:
         for name, param in model.named_parameters():
-            if "beacon" not in name:
-                param.requires_grad_(False)
+            param.requires_grad_("beacon" in name)
 
     if training_args.lora_tune:
         from peft import (
@@ -45,7 +44,13 @@ def main():
         )
         model = get_peft_model(model, config)
 
-    logger.info(f"Trainable Model params: {format_numel_str(sum(p.numel() for p in model.parameters() if p.requires_grad))}")
+    trainable_numel = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Trainable Model params: {format_numel_str(trainable_numel)}")
+    if trainable_numel == 0:
+        raise RuntimeError(
+            "No trainable parameters found. Check --enable_beacon / --only_train_beacon "
+            "and whether beacon parameters exist in the loaded model."
+        )
 
     with training_args.main_process_first():
         train_dataset = Data.prepare_train_data(
