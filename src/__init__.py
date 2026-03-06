@@ -37,27 +37,53 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     access_token = model_args_dict["access_token"]
 
     # Resolve local paths early to avoid Hugging Face Hub repo_id validation errors.
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     if isinstance(model_name_or_path, str):
         model_name_or_path = os.path.expanduser(model_name_or_path)
+        is_local_hint = model_name_or_path.startswith(".") or "/" in model_name_or_path
+
         if any(ch in model_name_or_path for ch in ["*", "?", "["]):
-            matches = glob.glob(model_name_or_path)
+            patterns = [model_name_or_path]
+            if not os.path.isabs(model_name_or_path):
+                patterns.append(os.path.join(repo_root, model_name_or_path))
+            matches = []
+            for pattern in patterns:
+                matches.extend(glob.glob(pattern))
             if len(matches) == 1:
                 model_name_or_path = matches[0]
             elif len(matches) > 1:
                 # deterministically pick the latest path to keep behavior stable.
                 model_name_or_path = sorted(matches)[-1]
             else:
-                raise FileNotFoundError(f"No local path matched model_name_or_path pattern: {model_name_or_path}")
+                raise FileNotFoundError(
+                    f"No local path matched model_name_or_path pattern: {model_name_or_path}. "
+                    f"Checked patterns: {patterns}"
+                )
 
-    is_local_model_path = isinstance(model_name_or_path, str) and os.path.exists(model_name_or_path)
-    if isinstance(model_name_or_path, str) and (model_name_or_path.startswith(".") or "/" in model_name_or_path):
-        if not is_local_model_path:
+        is_local_model_path = os.path.exists(model_name_or_path)
+        if not is_local_model_path and is_local_hint and not os.path.isabs(model_name_or_path):
+            project_relative_path = os.path.join(repo_root, model_name_or_path)
+            if os.path.exists(project_relative_path):
+                model_name_or_path = project_relative_path
+                is_local_model_path = True
+
+        if is_local_hint and not is_local_model_path:
+            snapshot_hints = []
+            for candidate in [model_name_or_path, os.path.join(repo_root, model_name_or_path)]:
+                snapshots_dir = os.path.dirname(candidate)
+                if os.path.basename(snapshots_dir) == "snapshots" and os.path.isdir(snapshots_dir):
+                    snapshot_hints = sorted(glob.glob(os.path.join(snapshots_dir, "*")))
+                    break
+            hint_text = f" Available snapshots: {snapshot_hints[:5]}" if snapshot_hints else ""
             raise FileNotFoundError(
                 f"Local model path does not exist: {model_name_or_path}. "
-                f"Please check symlink/absolute path and retry."
+                f"Please check symlink/absolute path and retry.{hint_text}"
             )
-    if is_local_model_path:
-        model_name_or_path = os.path.abspath(model_name_or_path)
+
+        if is_local_model_path:
+            model_name_or_path = os.path.abspath(model_name_or_path)
+    else:
+        is_local_model_path = False
 
     logger.info(f"Loading model and tokenizer from {model_name_or_path}...")
 
