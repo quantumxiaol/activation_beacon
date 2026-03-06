@@ -23,7 +23,20 @@ def main():
 
     model, tokenizer = get_model_and_tokenizer(model_args, device="cuda", evaluation_mode=False)
 
+    beacon_param_names = [name for name, _ in model.named_parameters() if "beacon" in name]
+    if model_args.enable_beacon:
+        logger.info(
+            f"Detected beacon parameter tensors: {len(beacon_param_names)} "
+            f"(beacon_param={model_args.beacon_param})"
+        )
+
     if model_args.enable_beacon and training_args.only_train_beacon:
+        if len(beacon_param_names) == 0:
+            raise RuntimeError(
+                "No beacon parameter tensors were found, but only_train_beacon=True. "
+                f"Current beacon_param={model_args.beacon_param}. "
+                "Please check --enable_beacon / --beacon_param."
+            )
         for name, param in model.named_parameters():
             param.requires_grad_("beacon" in name)
 

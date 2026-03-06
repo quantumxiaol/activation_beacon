@@ -160,7 +160,7 @@ class ModelArgs:
         metadata={'help': 'How to determine the beacon_ratio for each input. {step-random, instance-random, adapt-x}'}
     )
     beacon_param: Optional[List[str]] = field(
-        default=None,
+        default_factory=lambda: ["q", "k", "v"],
         metadata={'help': 'The introduced parameters for beacon. {q, k, v, o}'}
     )
     beacon_embed_init: str = field(
