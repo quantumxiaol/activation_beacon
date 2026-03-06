@@ -51,3 +51,10 @@ torch = [{ index = "pytorch-cu121", marker = "platform_system == 'Linux' and pla
 name = "pytorch-cu121"
 url = "https://download.pytorch.org/whl/cu121"
 explicit = true
+
+
+[tool.setuptools.packages.find]
+where = ["src"] 
+
+[tool.setuptools.package-dir]
+"" = "src" 
