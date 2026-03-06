@@ -57,9 +57,13 @@ def main():
         )
         model = get_peft_model(model, config)
 
-    trainable_numel = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"Trainable Model params: {format_numel_str(trainable_numel)}")
-    if trainable_numel == 0:
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    trainable_numel = sum(getattr(p, "ds_numel", p.numel()) for p in trainable_params)
+    logger.info(
+        f"Trainable Model params: {format_numel_str(trainable_numel)} "
+        f"({len(trainable_params)} tensors)"
+    )
+    if len(trainable_params) == 0:
         raise RuntimeError(
             "No trainable parameters found. Check --enable_beacon / --only_train_beacon "
             "and whether beacon parameters exist in the loaded model."
