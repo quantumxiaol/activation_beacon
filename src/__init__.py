@@ -13,6 +13,8 @@ logging.basicConfig(
 
 
 def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, return_tokenizer_only=False, **kwargs):    
+    import os
+    import glob
     import torch
     import transformers
     from dataclasses import asdict
@@ -34,6 +36,29 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     cache_dir = model_args_dict["model_cache_dir"]
     access_token = model_args_dict["access_token"]
 
+    # Resolve local paths early to avoid Hugging Face Hub repo_id validation errors.
+    if isinstance(model_name_or_path, str):
+        model_name_or_path = os.path.expanduser(model_name_or_path)
+        if any(ch in model_name_or_path for ch in ["*", "?", "["]):
+            matches = glob.glob(model_name_or_path)
+            if len(matches) == 1:
+                model_name_or_path = matches[0]
+            elif len(matches) > 1:
+                # deterministically pick the latest path to keep behavior stable.
+                model_name_or_path = sorted(matches)[-1]
+            else:
+                raise FileNotFoundError(f"No local path matched model_name_or_path pattern: {model_name_or_path}")
+
+    is_local_model_path = isinstance(model_name_or_path, str) and os.path.exists(model_name_or_path)
+    if isinstance(model_name_or_path, str) and (model_name_or_path.startswith(".") or "/" in model_name_or_path):
+        if not is_local_model_path:
+            raise FileNotFoundError(
+                f"Local model path does not exist: {model_name_or_path}. "
+                f"Please check symlink/absolute path and retry."
+            )
+    if is_local_model_path:
+        model_name_or_path = os.path.abspath(model_name_or_path)
+
     logger.info(f"Loading model and tokenizer from {model_name_or_path}...")
 
     tokenizer_kwargs = {}
@@ -46,6 +71,7 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         padding_side=model_args_dict["padding_side"], 
         token=access_token, 
         trust_remote_code=True,
+        local_files_only=is_local_model_path,
         **tokenizer_kwargs
     )
     if tokenizer.pad_token_id is None:
@@ -103,7 +129,8 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         model_name_or_path, 
         cache_dir=cache_dir, 
         token=access_token, 
-        trust_remote_code=True
+        trust_remote_code=True,
+        local_files_only=is_local_model_path,
     )
     architecture = probe_config.architectures[0]
 
@@ -139,6 +166,7 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
             token=access_token,
             # NOTE: keep the torch_dtype in config consistent with that in model
             torch_dtype=dtype,
+            local_files_only=is_local_model_path,
             **beacon_kwargs,
             **rope_kwargs,
             **attn_kwargs,
@@ -151,6 +179,7 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
             torch_dtype=dtype,
             device_map=device_map, 
             token=access_token,
+            local_files_only=is_local_model_path,
         )
 
     else:
@@ -187,6 +216,7 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
                 device_map=device_map,
                 token=access_token,
                 trust_remote_code=True,
+                local_files_only=is_local_model_path,
 
                 # NOTE: do not destroy the default rope_scaling of the model
                 **rope_kwargs,
