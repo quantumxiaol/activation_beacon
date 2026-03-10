@@ -17,10 +17,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from transformers.configuration_utils import PreTrainedConfig
+try:
+    from transformers.configuration_utils import PreTrainedConfig  # newer naming in some versions
+except ImportError:
+    from transformers.configuration_utils import PretrainedConfig as PreTrainedConfig
 from transformers.modeling_rope_utils import RopeParameters
 from transformers.utils import auto_docstring
-from transformers.configuration_utils import layer_type_validation
+try:
+    from transformers.configuration_utils import layer_type_validation
+except ImportError:
+    def layer_type_validation(layer_types, num_hidden_layers):
+        if layer_types is None:
+            return
+        if len(layer_types) != num_hidden_layers:
+            raise ValueError(
+                f"`layer_types` length ({len(layer_types)}) must equal num_hidden_layers ({num_hidden_layers})."
+            )
 
 
 @auto_docstring(checkpoint="Qwen/Qwen3.5-9B-Instruct")

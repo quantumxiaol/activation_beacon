@@ -13,9 +13,22 @@
 # limitations under the License.
 """Qwen2 model configuration"""
 
-from ...configuration_utils import PreTrainedConfig, layer_type_validation
-from ...modeling_rope_utils import RopeParameters
-from ...utils import auto_docstring, logging
+try:
+    from transformers.configuration_utils import PreTrainedConfig, layer_type_validation
+except ImportError:
+    from transformers.configuration_utils import PretrainedConfig as PreTrainedConfig
+    try:
+        from transformers.configuration_utils import layer_type_validation
+    except ImportError:
+        def layer_type_validation(layer_types, num_hidden_layers):
+            if layer_types is None:
+                return
+            if len(layer_types) != num_hidden_layers:
+                raise ValueError(
+                    f"`layer_types` length ({len(layer_types)}) must equal num_hidden_layers ({num_hidden_layers})."
+                )
+from transformers.modeling_rope_utils import RopeParameters
+from transformers.utils import auto_docstring, logging
 
 
 logger = logging.get_logger(__name__)
