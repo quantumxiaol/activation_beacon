@@ -17,9 +17,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from ...configuration_utils import PreTrainedConfig, layer_type_validation
-from ...modeling_rope_utils import RopeParameters
-from ...utils import auto_docstring
+from transformers.configuration_utils import PreTrainedConfig
+from transformers.modeling_rope_utils import RopeParameters
+from transformers.utils import auto_docstring
+from transformers.configuration_utils import layer_type_validation
 
 
 @auto_docstring(checkpoint="Qwen/Qwen3.5-9B-Instruct")
@@ -95,6 +96,17 @@ class Qwen3_5TextConfig(PreTrainedConfig):
         linear_num_key_heads=16,
         linear_num_value_heads=32,
         layer_types=None,
+        beacon_window=1024,
+        beacon_stride=1024,
+        beacon_attn="full-coverage",
+        beacon_ratio=None,
+        beacon_ratio_mix="step-random",
+        beacon_param=None,
+        beacon_embed_init="eos",
+        beacon_sink_size=0,
+        beacon_attend_prev=True,
+        beacon_pos="interleave",
+        beacon_parallel_window=1,
         pad_token_id: int | None = None,
         bos_token_id: int | None = None,
         eos_token_id: int | None = None,
@@ -137,6 +149,17 @@ class Qwen3_5TextConfig(PreTrainedConfig):
         self.linear_value_head_dim = linear_value_head_dim
         self.linear_num_key_heads = linear_num_key_heads
         self.linear_num_value_heads = linear_num_value_heads
+        self.beacon_window = beacon_window
+        self.beacon_stride = beacon_stride
+        self.beacon_attn = beacon_attn
+        self.beacon_ratio = [2, 4, 8, 16, 32] if beacon_ratio is None else beacon_ratio
+        self.beacon_ratio_mix = beacon_ratio_mix
+        self.beacon_param = ["q", "k", "v"] if beacon_param is None else beacon_param
+        self.beacon_embed_init = beacon_embed_init
+        self.beacon_sink_size = beacon_sink_size
+        self.beacon_attend_prev = beacon_attend_prev
+        self.beacon_pos = beacon_pos
+        self.beacon_parallel_window = beacon_parallel_window
         super().__init__(**kwargs)
 
 

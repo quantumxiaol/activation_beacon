@@ -27,27 +27,27 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from ... import initialization as init
-from ...activations import ACT2FN
-from ...cache_utils import Cache
-from ...generation import GenerationMixin
-from ...integrations import use_kernelized_func
-from ...masking_utils import create_causal_mask
-from ...modeling_flash_attention_utils import FlashAttentionKwargs
-from ...modeling_layers import GenericForSequenceClassification, GradientCheckpointingLayer
-from ...modeling_outputs import (
+from transformers import initialization as init
+from transformers.activations import ACT2FN
+from transformers.cache_utils import Cache
+from transformers.generation import GenerationMixin
+from transformers.integrations import use_kernelized_func
+from transformers.masking_utils import create_causal_mask
+from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
+from transformers.modeling_layers import GenericForSequenceClassification, GradientCheckpointingLayer
+from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
     CausalLMOutputWithPast,
     ModelOutput,
 )
-from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-from ...processing_utils import Unpack
-from ...utils import TransformersKwargs, auto_docstring, can_return_tuple, logging, torch_compilable_check
-from ...utils.generic import is_flash_attention_requested, maybe_autocast, merge_with_config_defaults
-from ...utils.import_utils import is_causal_conv1d_available, is_flash_linear_attention_available
-from ...utils.output_capturing import capture_outputs
+from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
+from transformers.processing_utils import Unpack
+from transformers.utils import TransformersKwargs, auto_docstring, can_return_tuple, logging, torch_compilable_check
+from transformers.utils.generic import is_flash_attention_requested, maybe_autocast, merge_with_config_defaults
+from transformers.utils.import_utils import is_causal_conv1d_available, is_flash_linear_attention_available
+from transformers.utils.output_capturing import capture_outputs
 from .configuration_qwen3_5 import Qwen3_5Config, Qwen3_5TextConfig, Qwen3_5VisionConfig
 
 

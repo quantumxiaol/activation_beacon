@@ -158,7 +158,9 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         trust_remote_code=True,
         local_files_only=is_local_model_path,
     )
-    architecture = probe_config.architectures[0]
+    architectures = getattr(probe_config, "architectures", None) or []
+    architecture = architectures[0] if len(architectures) else None
+    model_type = getattr(probe_config, "model_type", None)
 
     extra_kwargs = {}
     if model_args_dict["max_position_embeddings"] is not None:
@@ -178,13 +180,33 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         from .llama import LlamaForCausalLM, LlamaConfig
         from .mistral import MistralForCausalLM, MistralConfig
         from .qwen2 import Qwen2ForCausalLM, Qwen2Config
+        from .qwen3 import Qwen3ForCausalLM, Qwen3Config
+        from .qwen3_5 import Qwen3_5ForCausalLM, Qwen3_5TextConfig
         ARCHITECTURE_TO_CLASS = {
             'LlamaForCausalLM': (LlamaConfig, LlamaForCausalLM),
             'MistralForCausalLM': (MistralConfig, MistralForCausalLM),
             'Qwen2ForCausalLM': (Qwen2Config, Qwen2ForCausalLM),
+            'Qwen3ForCausalLM': (Qwen3Config, Qwen3ForCausalLM),
+            'Qwen3_5ForCausalLM': (Qwen3_5TextConfig, Qwen3_5ForCausalLM),
+        }
+        MODEL_TYPE_TO_CLASS = {
+            "llama": (LlamaConfig, LlamaForCausalLM),
+            "mistral": (MistralConfig, MistralForCausalLM),
+            "qwen2": (Qwen2Config, Qwen2ForCausalLM),
+            "qwen3": (Qwen3Config, Qwen3ForCausalLM),
+            "qwen3_5_text": (Qwen3_5TextConfig, Qwen3_5ForCausalLM),
         }
 
-        config_class, model_class = ARCHITECTURE_TO_CLASS[architecture]
+        if architecture in ARCHITECTURE_TO_CLASS:
+            config_class, model_class = ARCHITECTURE_TO_CLASS[architecture]
+        elif model_type in MODEL_TYPE_TO_CLASS:
+            config_class, model_class = MODEL_TYPE_TO_CLASS[model_type]
+        else:
+            supported = ", ".join(sorted(ARCHITECTURE_TO_CLASS.keys()))
+            raise NotImplementedError(
+                f"Beacon model for architecture/model_type '{architecture}'/'{model_type}' is not implemented yet. "
+                f"Supported architectures: {supported}"
+            )
 
         config = config_class.from_pretrained(
             model_name_or_path, 
