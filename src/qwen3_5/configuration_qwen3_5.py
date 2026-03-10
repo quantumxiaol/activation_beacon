@@ -27,7 +27,7 @@ try:
     from transformers.modeling_rope_utils import RopeParameters
 except ImportError:
     RopeParameters = Any
-from transformers.utils import auto_docstring
+from transformers.utils import auto_docstring as _hf_auto_docstring
 try:
     from transformers.configuration_utils import layer_type_validation
 except ImportError:
@@ -35,9 +35,25 @@ except ImportError:
         if layer_types is None:
             return
         if len(layer_types) != num_hidden_layers:
-            raise ValueError(
-                f"`layer_types` length ({len(layer_types)}) must equal num_hidden_layers ({num_hidden_layers})."
-            )
+                raise ValueError(
+                    f"`layer_types` length ({len(layer_types)}) must equal num_hidden_layers ({num_hidden_layers})."
+                )
+
+
+def auto_docstring(*args, **kwargs):
+    """
+    Compatibility wrapper:
+    some transformers versions may raise during decoration for unknown class names.
+    """
+    decorator = _hf_auto_docstring(*args, **kwargs)
+
+    def _wrapped(obj):
+        try:
+            return decorator(obj)
+        except Exception:
+            return obj
+
+    return _wrapped
 
 
 @auto_docstring(checkpoint="Qwen/Qwen3.5-9B-Instruct")

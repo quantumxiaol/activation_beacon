@@ -44,7 +44,7 @@ from transformers.modeling_outputs import (
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
-from transformers.utils import TransformersKwargs, auto_docstring, can_return_tuple, logging, torch_compilable_check
+from transformers.utils import TransformersKwargs, auto_docstring as _hf_auto_docstring, can_return_tuple, logging, torch_compilable_check
 from transformers.utils.generic import is_flash_attention_requested, maybe_autocast, merge_with_config_defaults
 from transformers.utils.import_utils import is_causal_conv1d_available, is_flash_linear_attention_available
 from transformers.utils.output_capturing import capture_outputs
@@ -64,6 +64,22 @@ else:
     FusedRMSNormGated = None
 
 logger = logging.get_logger(__name__)
+
+
+def auto_docstring(*args, **kwargs):
+    """
+    Compatibility wrapper:
+    some transformers versions may raise during decoration for unknown class names.
+    """
+    decorator = _hf_auto_docstring(*args, **kwargs)
+
+    def _wrapped(obj):
+        try:
+            return decorator(obj)
+        except Exception:
+            return obj
+
+    return _wrapped
 
 
 class Qwen3_5DynamicCache:
