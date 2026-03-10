@@ -18,7 +18,7 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
     import torch
     import transformers
     from dataclasses import asdict
-    from transformers import AutoTokenizer, AutoConfig, AutoModelForCausalLM, BitsAndBytesConfig
+    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, PretrainedConfig
     from transformers.utils import logging
     from transformers.integrations import is_deepspeed_zero3_enabled
     from packaging import version
@@ -150,17 +150,17 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
         if k.startswith("beacon") and v is not None:
             beacon_kwargs[k] = v
 
-    # use architecture attribute to distinguish different models
-    probe_config = AutoConfig.from_pretrained(
-        model_name_or_path, 
-        cache_dir=cache_dir, 
-        token=access_token, 
-        trust_remote_code=True,
+    # Probe config.json without requiring transformers to recognize model_type.
+    # This avoids crashes for newer checkpoints (e.g. qwen3_5) on older transformers.
+    probe_config_dict, _ = PretrainedConfig.get_config_dict(
+        model_name_or_path,
+        cache_dir=cache_dir,
+        token=access_token,
         local_files_only=is_local_model_path,
     )
-    architectures = getattr(probe_config, "architectures", None) or []
+    architectures = probe_config_dict.get("architectures", None) or []
     architecture = architectures[0] if len(architectures) else None
-    model_type = getattr(probe_config, "model_type", None)
+    model_type = probe_config_dict.get("model_type", None)
 
     extra_kwargs = {}
     if model_args_dict["max_position_embeddings"] is not None:
@@ -208,18 +208,30 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
                 f"Supported architectures: {supported}"
             )
 
-        config = config_class.from_pretrained(
-            model_name_or_path, 
-            cache_dir=cache_dir,
-            token=access_token,
-            # NOTE: keep the torch_dtype in config consistent with that in model
-            torch_dtype=dtype,
-            local_files_only=is_local_model_path,
-            **beacon_kwargs,
-            **rope_kwargs,
-            **attn_kwargs,
-            **extra_kwargs,
-        )
+        if config_class is Qwen3_5TextConfig and model_type == "qwen3_5":
+            # qwen3.5 checkpoints may store a top-level multimodal config with nested text_config.
+            text_config_dict = probe_config_dict.get("text_config", probe_config_dict)
+            config = config_class.from_dict(
+                text_config_dict,
+                torch_dtype=dtype,
+                **beacon_kwargs,
+                **rope_kwargs,
+                **attn_kwargs,
+                **extra_kwargs,
+            )
+        else:
+            config = config_class.from_pretrained(
+                model_name_or_path,
+                cache_dir=cache_dir,
+                token=access_token,
+                # NOTE: keep the torch_dtype in config consistent with that in model
+                torch_dtype=dtype,
+                local_files_only=is_local_model_path,
+                **beacon_kwargs,
+                **rope_kwargs,
+                **attn_kwargs,
+                **extra_kwargs,
+            )
         model = model_class.from_pretrained(
             model_name_or_path, 
             config=config,
