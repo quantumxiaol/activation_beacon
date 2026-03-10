@@ -13,6 +13,8 @@
 # limitations under the License.
 """Qwen2 model configuration"""
 
+from typing import Any
+
 try:
     from transformers.configuration_utils import PreTrainedConfig, layer_type_validation
 except ImportError:
@@ -27,7 +29,10 @@ except ImportError:
                 raise ValueError(
                     f"`layer_types` length ({len(layer_types)}) must equal num_hidden_layers ({num_hidden_layers})."
                 )
-from transformers.modeling_rope_utils import RopeParameters
+try:
+    from transformers.modeling_rope_utils import RopeParameters
+except ImportError:
+    RopeParameters = Any
 from transformers.utils import auto_docstring, logging
 
 

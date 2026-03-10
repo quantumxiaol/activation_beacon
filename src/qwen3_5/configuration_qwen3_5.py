@@ -17,11 +17,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any
+
 try:
     from transformers.configuration_utils import PreTrainedConfig  # newer naming in some versions
 except ImportError:
     from transformers.configuration_utils import PretrainedConfig as PreTrainedConfig
-from transformers.modeling_rope_utils import RopeParameters
+try:
+    from transformers.modeling_rope_utils import RopeParameters
+except ImportError:
+    RopeParameters = Any
 from transformers.utils import auto_docstring
 try:
     from transformers.configuration_utils import layer_type_validation
