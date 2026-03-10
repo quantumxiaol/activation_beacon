@@ -14,6 +14,8 @@ DEFAULT_MODELS = [
 
 TRAINING_MODELS = [
     "Qwen/Qwen2-7B-Instruct",
+    "Qwen/Qwen3-8B",
+    "Qwen/Qwen3.5-4B",
     "mistralai/Mistral-7B-Instruct-v0.2",
     "meta-llama/Meta-Llama-3-8B-Instruct",
 ]

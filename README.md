@@ -28,6 +28,31 @@ uv sync --default-index "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
 ```
 
+## Download Models
+Use the helper script to download inference/training models from Hugging Face:
+
+```bash
+# Download default inference model(s)
+python scripts/download_models.py
+
+# Download training model set (includes Qwen2/Qwen3/Qwen3.5/Mistral/Llama examples)
+python scripts/download_models.py --training
+
+# Download all known models in this repo
+python scripts/download_models.py --all
+
+# Download specific models only
+python scripts/download_models.py --models Qwen/Qwen3-8B Qwen/Qwen3.5-4B
+```
+
+Optional cache/token settings:
+
+```bash
+export HF_HOME=/path/to/hf_cache
+export HF_TOKEN=your_hf_token
+python scripts/download_models.py --training
+```
+
 ## Usage
 ```python
 import json
