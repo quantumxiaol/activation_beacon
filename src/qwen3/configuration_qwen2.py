@@ -33,10 +33,26 @@ try:
     from transformers.modeling_rope_utils import RopeParameters
 except ImportError:
     RopeParameters = Any
-from transformers.utils import auto_docstring, logging
+from transformers.utils import auto_docstring as _hf_auto_docstring, logging
 
 
 logger = logging.get_logger(__name__)
+
+
+def auto_docstring(*args, **kwargs):
+    """
+    Compatibility wrapper:
+    some transformers versions may raise during decoration for unknown class names.
+    """
+    decorator = _hf_auto_docstring(*args, **kwargs)
+
+    def _wrapped(obj):
+        try:
+            return decorator(obj)
+        except Exception:
+            return obj
+
+    return _wrapped
 
 
 @auto_docstring(checkpoint="Qwen/Qwen2-7B-beta")

@@ -21,13 +21,32 @@
 import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
+from contextlib import nullcontext
 from typing import Any, Optional
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from transformers import initialization as init
+try:
+    from transformers import initialization as init
+except Exception:
+    class _InitCompat:
+        @staticmethod
+        def ones_(tensor):
+            return nn.init.ones_(tensor)
+
+        @staticmethod
+        def zeros_(tensor):
+            return nn.init.zeros_(tensor)
+
+        @staticmethod
+        def copy_(tensor, src):
+            with torch.no_grad():
+                tensor.copy_(src)
+            return tensor
+
+    init = _InitCompat()
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache
 from transformers.generation import GenerationMixin
@@ -44,10 +63,32 @@ from transformers.modeling_outputs import (
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
-from transformers.utils import TransformersKwargs, auto_docstring as _hf_auto_docstring, can_return_tuple, logging, torch_compilable_check
-from transformers.utils.generic import is_flash_attention_requested, maybe_autocast, merge_with_config_defaults
+from transformers.utils import auto_docstring as _hf_auto_docstring, can_return_tuple, logging
+try:
+    from transformers.utils import TransformersKwargs
+except Exception:
+    TransformersKwargs = dict
+try:
+    from transformers.utils import torch_compilable_check
+except Exception:
+    def torch_compilable_check(*args, **kwargs):
+        return None
+from transformers.utils.generic import is_flash_attention_requested, maybe_autocast
+try:
+    from transformers.utils.generic import merge_with_config_defaults
+except Exception:
+    def merge_with_config_defaults(func=None, **kwargs):
+        if func is None:
+            return lambda f: f
+        return func
 from transformers.utils.import_utils import is_causal_conv1d_available, is_flash_linear_attention_available
-from transformers.utils.output_capturing import capture_outputs
+try:
+    from transformers.utils.output_capturing import capture_outputs
+except Exception:
+    def capture_outputs(func=None, **kwargs):
+        if func is None:
+            return lambda f: f
+        return func
 from .configuration_qwen3_5 import Qwen3_5Config, Qwen3_5TextConfig, Qwen3_5VisionConfig
 
 
