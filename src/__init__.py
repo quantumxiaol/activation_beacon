@@ -187,7 +187,9 @@ def get_model_and_tokenizer(model_args, device="cpu", evaluation_mode=True, retu
             'MistralForCausalLM': (MistralConfig, MistralForCausalLM),
             'Qwen2ForCausalLM': (Qwen2Config, Qwen2ForCausalLM),
             'Qwen3ForCausalLM': (Qwen3Config, Qwen3ForCausalLM),
+            'Qwen3ForConditionalGeneration': (Qwen3Config, Qwen3ForCausalLM),
             'Qwen3_5ForCausalLM': (Qwen3_5TextConfig, Qwen3_5ForCausalLM),
+            'Qwen3_5ForConditionalGeneration': (Qwen3_5TextConfig, Qwen3_5ForCausalLM),
         }
         MODEL_TYPE_TO_CLASS = {
             "llama": (LlamaConfig, LlamaForCausalLM),
