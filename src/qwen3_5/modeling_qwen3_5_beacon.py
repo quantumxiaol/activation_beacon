@@ -7,6 +7,7 @@ from ..modeling_beacon import Memory
 from ..modeling_utils import ModelOutput, compute_loss, optional_grad_ctx
 from .configuration_qwen3_5 import Qwen3_5TextConfig
 from .modeling_qwen3_5 import (
+    ALL_ATTENTION_FUNCTIONS,
     Qwen3_5Attention,
     Qwen3_5DecoderLayer,
     Qwen3_5ForCausalLM as HFQwen3_5ForCausalLM,
@@ -154,9 +155,17 @@ class BeaconQwen3_5Attention(Qwen3_5Attention):
             cos, sin = position_embeddings
             query_states, key_states = self.apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-            from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS as _ALL_ATTN
-
-            attention_impl = _ALL_ATTN.get_interface(self.config._attn_implementation, eager_attention_forward)
+            # Resolve attention implementation with compat fallback
+            if hasattr(ALL_ATTENTION_FUNCTIONS, 'get_interface'):
+                attention_impl = ALL_ATTENTION_FUNCTIONS.get_interface(
+                    self.config._attn_implementation, eager_attention_forward
+                )
+            elif isinstance(ALL_ATTENTION_FUNCTIONS, dict):
+                attention_impl = ALL_ATTENTION_FUNCTIONS.get(
+                    self.config._attn_implementation, eager_attention_forward
+                )
+            else:
+                attention_impl = eager_attention_forward
 
             attn_output, attn_weights = attention_impl(
                 self,

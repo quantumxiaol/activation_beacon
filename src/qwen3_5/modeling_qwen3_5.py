@@ -50,20 +50,73 @@ except Exception:
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache
 from transformers.generation import GenerationMixin
-from transformers.integrations import use_kernelized_func
-from transformers.masking_utils import create_causal_mask
-from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
-from transformers.modeling_layers import GenericForSequenceClassification, GradientCheckpointingLayer
+
+# --- Compatibility wrappers for newer transformers APIs ---
+try:
+    from transformers.integrations import use_kernelized_func
+except ImportError:
+    def use_kernelized_func(fn):
+        """No-op decorator fallback for older transformers."""
+        return lambda cls: cls
+
+try:
+    from transformers.masking_utils import create_causal_mask
+except ImportError:
+    def create_causal_mask(**kwargs):
+        """Stub: beacon mode builds its own 4D mask, so this is unused."""
+        return None
+
+try:
+    from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
+except ImportError:
+    FlashAttentionKwargs = dict
+
+try:
+    from transformers.modeling_layers import GradientCheckpointingLayer
+except ImportError:
+    GradientCheckpointingLayer = nn.Module
+
+try:
+    from transformers.modeling_layers import GenericForSequenceClassification
+except ImportError:
+    GenericForSequenceClassification = nn.Module
+
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
-    BaseModelOutputWithPooling,
     CausalLMOutputWithPast,
     ModelOutput,
 )
+try:
+    from transformers.modeling_outputs import BaseModelOutputWithPooling
+except ImportError:
+    BaseModelOutputWithPooling = BaseModelOutputWithPast
+
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
-from transformers.processing_utils import Unpack
-from transformers.utils import auto_docstring as _hf_auto_docstring, can_return_tuple, logging
+from transformers.modeling_utils import PreTrainedModel
+try:
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+except ImportError:
+    ALL_ATTENTION_FUNCTIONS = {}
+
+try:
+    from transformers.processing_utils import Unpack
+except ImportError:
+    Unpack = None  # used only in type hints
+
+from transformers.utils import logging
+try:
+    from transformers.utils import auto_docstring as _hf_auto_docstring
+except ImportError:
+    def _hf_auto_docstring(*args, **kwargs):
+        def _dec(obj):
+            return obj
+        return _dec
+# NOTE: Force no-op for can_return_tuple — the transformers 4.57.6 version
+# crashes with Python 3.10+ union annotations (X | Y) used in this file.
+# The beacon code path doesn't use tuple returns, so this is safe.
+def can_return_tuple(fn):
+    return fn
+
 try:
     from transformers.utils import TransformersKwargs
 except Exception:
@@ -73,7 +126,20 @@ try:
 except Exception:
     def torch_compilable_check(*args, **kwargs):
         return None
-from transformers.utils.generic import is_flash_attention_requested, maybe_autocast
+
+try:
+    from transformers.utils.generic import is_flash_attention_requested
+except ImportError:
+    def is_flash_attention_requested(*args, **kwargs):
+        return False
+try:
+    from transformers.utils.generic import maybe_autocast
+except ImportError:
+    from contextlib import contextmanager as _cm
+    @_cm
+    def maybe_autocast(**kwargs):
+        yield
+
 try:
     from transformers.utils.generic import merge_with_config_defaults
 except Exception:
@@ -81,7 +147,15 @@ except Exception:
         if func is None:
             return lambda f: f
         return func
-from transformers.utils.import_utils import is_causal_conv1d_available, is_flash_linear_attention_available
+
+try:
+    from transformers.utils.import_utils import is_causal_conv1d_available, is_flash_linear_attention_available
+except ImportError:
+    def is_causal_conv1d_available():
+        return False
+    def is_flash_linear_attention_available():
+        return False
+
 try:
     from transformers.utils.output_capturing import capture_outputs
 except Exception:
@@ -110,9 +184,24 @@ logger = logging.get_logger(__name__)
 def auto_docstring(*args, **kwargs):
     """
     Compatibility wrapper:
-    some transformers versions may raise during decoration for unknown class names.
+    some transformers versions may raise during decoration for unknown class names
+    or unsupported type annotations (e.g. X | Y union syntax on Python 3.10).
+
+    Handles both ``@auto_docstring`` (direct) and ``@auto_docstring(...)`` (factory).
     """
-    decorator = _hf_auto_docstring(*args, **kwargs)
+    # Case 1: @auto_docstring  (used directly as a decorator on a class/function)
+    if len(args) == 1 and not kwargs and (isinstance(args[0], type) or callable(args[0])):
+        obj = args[0]
+        try:
+            return _hf_auto_docstring(obj)
+        except Exception:
+            return obj
+
+    # Case 2: @auto_docstring(custom_intro=...) (factory returning a decorator)
+    try:
+        decorator = _hf_auto_docstring(*args, **kwargs)
+    except Exception:
+        return lambda obj: obj
 
     def _wrapped(obj):
         try:
