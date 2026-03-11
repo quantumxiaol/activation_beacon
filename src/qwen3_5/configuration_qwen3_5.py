@@ -145,7 +145,7 @@ class Qwen3_5TextConfig(PreTrainedConfig):
         eos_token_id: int | None = None,
         **kwargs,
     ):
-        kwargs["ignore_keys_at_rope_validation"] = {"mrope_section", "mrope_interleaved"}
+        kwargs["ignore_keys_at_rope_validation"] = ["mrope_section", "mrope_interleaved"]
         self.pad_token_id = pad_token_id
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
