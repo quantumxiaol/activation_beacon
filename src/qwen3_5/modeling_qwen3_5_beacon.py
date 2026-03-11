@@ -316,16 +316,35 @@ class BeaconQwen3_5TextModel(Qwen3_5TextModel):
 
             for layer_idx, decoder_layer in enumerate(self.layers):
                 layer_past = past_key_values[layer_idx] if past_key_values is not None else None
-                hidden_states, layer_cache = decoder_layer(
-                    hidden_states,
-                    position_embeddings=position_embeddings,
-                    attention_mask=attention_mask,
-                    position_ids=position_ids,
-                    past_key_values=layer_past,
-                    use_cache=use_cache,
-                    **kwargs,
-                )
-                next_decoder_cache.append(layer_cache)
+
+                if self.gradient_checkpointing and self.training:
+                    # Bypass GradientCheckpointingLayer.__call__ which strips
+                    # past_key_values, breaking beacon mode detection.
+                    layer_outputs = self._gradient_checkpointing_func(
+                        decoder_layer.__call__,
+                        hidden_states,
+                        position_embeddings,
+                        attention_mask,
+                        position_ids,
+                        layer_past,
+                    )
+                else:
+                    layer_outputs = decoder_layer(
+                        hidden_states,
+                        position_embeddings=position_embeddings,
+                        attention_mask=attention_mask,
+                        position_ids=position_ids,
+                        past_key_values=layer_past,
+                        use_cache=use_cache,
+                        **kwargs,
+                    )
+
+                if isinstance(layer_outputs, tuple):
+                    hidden_states = layer_outputs[0]
+                    next_decoder_cache.append(layer_outputs[1] if len(layer_outputs) > 1 else layer_past)
+                else:
+                    hidden_states = layer_outputs
+                    next_decoder_cache.append(layer_past)
 
             hidden_states = self.norm(hidden_states)
             return Qwen3_5ModelOutputWithPast(
