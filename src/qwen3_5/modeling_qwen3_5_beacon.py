@@ -146,14 +146,15 @@ class BeaconQwen3_5Attention(Qwen3_5Attention):
             key_states = self.k_norm(k_states.view(hidden_shape)).transpose(1, 2)
             value_states = v_states.view(hidden_shape).transpose(1, 2)
 
+            # Apply RoPE BEFORE concatenation — past keys are already RoPE-encoded
+            cos, sin = position_embeddings
+            query_states, key_states = self.apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
             present_key_value = (key_states, value_states, beacon_size, beacon_indices)
 
             if past_key is not None:
                 key_states = torch.cat([past_key, key_states], dim=2)
                 value_states = torch.cat([past_value, value_states], dim=2)
-
-            cos, sin = position_embeddings
-            query_states, key_states = self.apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
             # Resolve attention implementation with compat fallback
             if hasattr(ALL_ATTENTION_FUNCTIONS, 'get_interface'):
