@@ -367,7 +367,10 @@ class BeaconQwen3Model(HFQwen3Model):
                 position_ids = position_ids.unsqueeze(0).expand(inputs_embeds.shape[0], -1)
 
             hidden_states = inputs_embeds
-            position_embeddings = self.rotary_emb(hidden_states, position_ids)
+            # Memory.step() may provide position_ids for [memory + current chunk], while
+            # RoPE here should only be applied to current chunk queries/keys.
+            rope_position_ids = position_ids[:, -hidden_states.shape[1] :]
+            position_embeddings = self.rotary_emb(hidden_states, rope_position_ids)
             next_decoder_cache = []
 
             for layer_idx, decoder_layer in enumerate(self.layers):
