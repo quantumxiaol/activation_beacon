@@ -343,6 +343,8 @@ class BeaconQwen3Model(HFQwen3Model):
         **kwargs,
     ) -> BaseModelOutputWithPast:
         if isinstance(past_key_values, list):
+            # Beacon memory update relies on per-layer KV cache outputs.
+            use_cache = True
             if input_ids is not None and inputs_embeds is not None:
                 raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
 
@@ -505,6 +507,8 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
         beacon_skip_last: Optional[int] = None,
         **kwargs,
     ):
+        # Beacon mode requires returned KV cache to update memory each step.
+        use_cache = True
         self.memory.prepare(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -524,6 +528,11 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
                 use_cache=use_cache,
                 **kwargs,
             )
+            if outputs.past_key_values is None:
+                raise RuntimeError(
+                    "Beacon forward requires `past_key_values`, but got None. "
+                    "Ensure `use_cache=True` in beacon mode."
+                )
             self.memory.update_memory(outputs.past_key_values)
             if labels is not None:
                 self.memory.update_loss(outputs.batch_loss, (labels != -100).sum(-1))
