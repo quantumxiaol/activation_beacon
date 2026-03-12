@@ -174,7 +174,7 @@ def main():
         )
     )
     if train_dataset is not None:
-        trainer.train()
+        trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
     elif eval_dataset is not None:
         trainer.evaluate()
 
