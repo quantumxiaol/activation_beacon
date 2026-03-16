@@ -16,7 +16,8 @@ from src.trainer import ActivationBeaconTrainer
 
 logger = logging.getLogger(__name__)
 
-
+import os
+import torch
 def _patch_deepspeed_grad_fn_compat() -> bool:
     """Patch DeepSpeed/Torch grad-fn probes to avoid NoneType crashes on frozen params."""
     try:
@@ -84,7 +85,10 @@ def main():
             "Applied DeepSpeed grad-fn compatibility patch for current torch/deepspeed versions."
         )
 
-    model, tokenizer = get_model_and_tokenizer(model_args, device="cuda", evaluation_mode=False)
+    # model, tokenizer = get_model_and_tokenizer(model_args, device="cuda", evaluation_mode=False)
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    torch.cuda.set_device(local_rank)
+    model, tokenizer = get_model_and_tokenizer(model_args, device=f"cuda:{local_rank}", evaluation_mode=False)
 
     beacon_param_names = [name for name, _ in model.named_parameters() if "beacon" in name]
     if model_args.enable_beacon:
