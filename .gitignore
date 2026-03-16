@@ -10,7 +10,7 @@ wheels/
 .venv
 .env
 # Datasets and models
-data/
+
 modelsweights/
 logs/
 checkpoints/
