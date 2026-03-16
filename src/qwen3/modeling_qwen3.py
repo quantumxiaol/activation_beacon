@@ -295,7 +295,8 @@ class BeaconQwen3Model(HFQwen3Model):
         self.layers = nn.ModuleList(
             [BeaconQwen3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.beacon_embed_tokens = nn.Embedding(1, config.hidden_size, self.padding_idx)
+        # self.beacon_embed_tokens = nn.Embedding(1, config.hidden_size, self.padding_idx)
+        self.beacon_embed_tokens = nn.Embedding(1, config.hidden_size)
         self.beacon_embed_tokens._is_hf_initialized = True
         self.post_init()
 
