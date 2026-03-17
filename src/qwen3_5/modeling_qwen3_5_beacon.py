@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 from torch import nn
+from transformers.integrations import is_deepspeed_zero3_enabled
 
 from ..modeling_beacon import Memory
 from ..modeling_utils import ModelOutput, compute_loss, optional_grad_ctx
@@ -50,23 +51,66 @@ class BeaconQwen3_5Attention(Qwen3_5Attention):
 
     def _init_beacon_proj(self, missing_keys):
         beacon_param = self.config.beacon_param
-        with torch.no_grad():
-            if "q" in beacon_param and any("beacon_q_proj" in k for k in missing_keys):
-                self.beacon_q_proj.weight.data[:] = self.q_proj.weight.data
+        if is_deepspeed_zero3_enabled():
+            import deepspeed
+
+            if "q" in beacon_param:
+                params = [self.beacon_q_proj.weight, self.q_proj.weight]
                 if self.q_proj.bias is not None:
-                    self.beacon_q_proj.bias.data[:] = self.q_proj.bias.data
-            if "k" in beacon_param and any("beacon_k_proj" in k for k in missing_keys):
-                self.beacon_k_proj.weight.data[:] = self.k_proj.weight.data
+                    params.extend([self.beacon_q_proj.bias, self.q_proj.bias])
+                with deepspeed.zero.GatheredParameters(params, modifier_rank=0):
+                    if (self.beacon_q_proj.weight.sum(-1) == 0).any() or (self.beacon_q_proj.weight > 1e29).any():
+                        self.beacon_q_proj.weight.data[:] = self.q_proj.weight.data
+                        if self.q_proj.bias is not None:
+                            self.beacon_q_proj.bias.data[:] = self.q_proj.bias.data
+
+            if "k" in beacon_param:
+                params = [self.beacon_k_proj.weight, self.k_proj.weight]
                 if self.k_proj.bias is not None:
-                    self.beacon_k_proj.bias.data[:] = self.k_proj.bias.data
-            if "v" in beacon_param and any("beacon_v_proj" in k for k in missing_keys):
-                self.beacon_v_proj.weight.data[:] = self.v_proj.weight.data
+                    params.extend([self.beacon_k_proj.bias, self.k_proj.bias])
+                with deepspeed.zero.GatheredParameters(params, modifier_rank=0):
+                    if (self.beacon_k_proj.weight.sum(-1) == 0).any() or (self.beacon_k_proj.weight > 1e29).any():
+                        self.beacon_k_proj.weight.data[:] = self.k_proj.weight.data
+                        if self.k_proj.bias is not None:
+                            self.beacon_k_proj.bias.data[:] = self.k_proj.bias.data
+
+            if "v" in beacon_param:
+                params = [self.beacon_v_proj.weight, self.v_proj.weight]
                 if self.v_proj.bias is not None:
-                    self.beacon_v_proj.bias.data[:] = self.v_proj.bias.data
-            if "o" in beacon_param and any("beacon_o_proj" in k for k in missing_keys):
-                self.beacon_o_proj.weight.data[:] = self.o_proj.weight.data
+                    params.extend([self.beacon_v_proj.bias, self.v_proj.bias])
+                with deepspeed.zero.GatheredParameters(params, modifier_rank=0):
+                    if (self.beacon_v_proj.weight.sum(-1) == 0).any() or (self.beacon_v_proj.weight > 1e29).any():
+                        self.beacon_v_proj.weight.data[:] = self.v_proj.weight.data
+                        if self.v_proj.bias is not None:
+                            self.beacon_v_proj.bias.data[:] = self.v_proj.bias.data
+
+            if "o" in beacon_param:
+                params = [self.beacon_o_proj.weight, self.o_proj.weight]
                 if self.o_proj.bias is not None:
-                    self.beacon_o_proj.bias.data[:] = self.o_proj.bias.data
+                    params.extend([self.beacon_o_proj.bias, self.o_proj.bias])
+                with deepspeed.zero.GatheredParameters(params, modifier_rank=0):
+                    if (self.beacon_o_proj.weight.sum(-1) == 0).any() or (self.beacon_o_proj.weight > 1e29).any():
+                        self.beacon_o_proj.weight.data[:] = self.o_proj.weight.data
+                        if self.o_proj.bias is not None:
+                            self.beacon_o_proj.bias.data[:] = self.o_proj.bias.data
+        else:
+            with torch.no_grad():
+                if "q" in beacon_param and any("beacon_q_proj" in k for k in missing_keys):
+                    self.beacon_q_proj.weight.data[:] = self.q_proj.weight.data
+                    if self.q_proj.bias is not None:
+                        self.beacon_q_proj.bias.data[:] = self.q_proj.bias.data
+                if "k" in beacon_param and any("beacon_k_proj" in k for k in missing_keys):
+                    self.beacon_k_proj.weight.data[:] = self.k_proj.weight.data
+                    if self.k_proj.bias is not None:
+                        self.beacon_k_proj.bias.data[:] = self.k_proj.bias.data
+                if "v" in beacon_param and any("beacon_v_proj" in k for k in missing_keys):
+                    self.beacon_v_proj.weight.data[:] = self.v_proj.weight.data
+                    if self.v_proj.bias is not None:
+                        self.beacon_v_proj.bias.data[:] = self.v_proj.bias.data
+                if "o" in beacon_param and any("beacon_o_proj" in k for k in missing_keys):
+                    self.beacon_o_proj.weight.data[:] = self.o_proj.weight.data
+                    if self.o_proj.bias is not None:
+                        self.beacon_o_proj.bias.data[:] = self.o_proj.bias.data
 
     def qkv_proj_with_beacon(self, hidden_states, beacon_size, beacon_indices):
         if beacon_size > 0:
@@ -265,22 +309,40 @@ class BeaconQwen3_5TextModel(Qwen3_5TextModel):
             [BeaconQwen3_5DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
         self.norm = Qwen3_5RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.beacon_embed_tokens = nn.Embedding(1, config.hidden_size, config.pad_token_id)
+        # Keep beacon embedding independent from model pad token id to avoid invalid padding_idx
+        # when pad_token_id is outside [0, num_embeddings).
+        self.beacon_embed_tokens = nn.Embedding(1, config.hidden_size)
         self.beacon_embed_tokens._is_hf_initialized = True
         self.post_init()
 
     def _init_beacon_embed(self, missing_keys):
-        with torch.no_grad():
-            if any("beacon_embed_tokens" in k for k in missing_keys):
-                if self.config.beacon_embed_init == "bos" and self.config.bos_token_id is not None:
-                    self.beacon_embed_tokens.weight.data[:] = self.embed_tokens.weight.data[self.config.bos_token_id]
-                else:
-                    eos_token_id = self.config.eos_token_id
-                    if isinstance(eos_token_id, list):
-                        eos_token_id = eos_token_id[0]
-                    if eos_token_id is None:
-                        eos_token_id = self.config.vocab_size - 1
-                    self.beacon_embed_tokens.weight.data[:] = self.embed_tokens.weight.data[eos_token_id]
+        if is_deepspeed_zero3_enabled():
+            import deepspeed
+
+            params = [self.beacon_embed_tokens.weight, self.embed_tokens.weight]
+            with deepspeed.zero.GatheredParameters(params, modifier_rank=0):
+                if (self.beacon_embed_tokens.weight == 0).all():
+                    if self.config.beacon_embed_init == "bos" and self.config.bos_token_id is not None:
+                        self.beacon_embed_tokens.weight.data[:] = self.embed_tokens.weight.data[self.config.bos_token_id]
+                    else:
+                        eos_token_id = self.config.eos_token_id
+                        if isinstance(eos_token_id, list):
+                            eos_token_id = eos_token_id[0]
+                        if eos_token_id is None:
+                            eos_token_id = self.config.vocab_size - 1
+                        self.beacon_embed_tokens.weight.data[:] = self.embed_tokens.weight.data[eos_token_id]
+        else:
+            with torch.no_grad():
+                if any("beacon_embed_tokens" in k for k in missing_keys):
+                    if self.config.beacon_embed_init == "bos" and self.config.bos_token_id is not None:
+                        self.beacon_embed_tokens.weight.data[:] = self.embed_tokens.weight.data[self.config.bos_token_id]
+                    else:
+                        eos_token_id = self.config.eos_token_id
+                        if isinstance(eos_token_id, list):
+                            eos_token_id = eos_token_id[0]
+                        if eos_token_id is None:
+                            eos_token_id = self.config.vocab_size - 1
+                        self.beacon_embed_tokens.weight.data[:] = self.embed_tokens.weight.data[eos_token_id]
 
     def forward(
         self,
@@ -436,12 +498,17 @@ class Qwen3_5ForCausalLM(HFQwen3_5ForCausalLM):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
         beacon_skip_first: Optional[int] = None,
         beacon_skip_last: Optional[int] = None,
         **kwargs,
     ):
+        # Beacon mode requires returned KV cache to update memory each step.
+        use_cache = True
         self.memory.prepare(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -457,10 +524,16 @@ class Qwen3_5ForCausalLM(HFQwen3_5ForCausalLM):
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
                 labels=labels,
                 use_cache=use_cache,
                 **kwargs,
             )
+            if outputs.past_key_values is None:
+                raise RuntimeError(
+                    "Beacon forward requires `past_key_values`, but got None. "
+                    "Ensure `use_cache=True` in beacon mode."
+                )
             self.memory.update_memory(outputs.past_key_values)
             if labels is not None:
                 self.memory.update_loss(outputs.batch_loss, (labels != -100).sum(-1))
