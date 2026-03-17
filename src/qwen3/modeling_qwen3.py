@@ -505,8 +505,12 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
         self,
         input_ids: torch.LongTensor = None,
         attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
         beacon_skip_first: Optional[int] = None,
         beacon_skip_last: Optional[int] = None,
         **kwargs,
@@ -528,8 +532,10 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
                 attention_mask=attention_mask,
                 position_ids=position_ids,
                 past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
                 labels=labels,
                 use_cache=use_cache,
+                cache_position=cache_position,
                 **kwargs,
             )
             if outputs.past_key_values is None:
