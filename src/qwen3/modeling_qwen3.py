@@ -483,7 +483,10 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
         )
 
         hidden_states = outputs.last_hidden_state
-        logits = self.lm_head(hidden_states).float()
+        # Keep training logits in model dtype to reduce peak memory for long-context runs.
+        logits = self.lm_head(hidden_states)
+        if not self.training:
+            logits = logits.float()
 
         loss = None
         batch_loss = None
