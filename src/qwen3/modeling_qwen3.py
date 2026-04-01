@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple, Union
 
+import os
 import torch
 import torch.distributed as dist
 from torch import nn
@@ -536,11 +537,46 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
             skip_last=beacon_skip_last,
         )
 
+        sync_steps_across_ranks = (
+            is_deepspeed_zero3_enabled()
+            and dist.is_available()
+            and dist.is_initialized()
+            and dist.get_world_size() > 1
+        )
+        sync_steps_env = os.getenv("BEACON_SYNC_STEPS")
+        if sync_steps_env is not None:
+            sync_steps_across_ranks = sync_steps_env == "1"
+
+        if not sync_steps_across_ranks:
+            while not self.memory.finish:
+                input_ids, attention_mask, position_ids, past_key_values, labels = self.memory.step()
+                outputs = self._native_forward(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    past_key_values=past_key_values,
+                    inputs_embeds=inputs_embeds,
+                    labels=labels,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                    **kwargs,
+                )
+                if outputs.past_key_values is None:
+                    raise RuntimeError(
+                        "Beacon forward requires `past_key_values`, but got None. "
+                        "Ensure `use_cache=True` in beacon mode."
+                    )
+                self.memory.update_memory(outputs.past_key_values)
+                if labels is not None:
+                    self.memory.update_loss(outputs.batch_loss, (labels != -100).sum(-1))
+
+            return self.memory.output(outputs)
+
         outputs = None
         while True:
             local_has_step = not self.memory.finish
             global_has_step = local_has_step
-            if dist.is_available() and dist.is_initialized():
+            if sync_steps_across_ranks:
                 has_step_tensor = torch.tensor(
                     [1 if local_has_step else 0],
                     dtype=torch.int32,
