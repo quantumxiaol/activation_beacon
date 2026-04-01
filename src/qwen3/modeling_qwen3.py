@@ -364,13 +364,13 @@ class BeaconQwen3Model(HFQwen3Model):
                 eos_token_id = int(min(max(eos_token_id, 0), self.config.vocab_size - 1))
 
                 safe_input_ids = input_ids.masked_fill(beacon_mask, eos_token_id)
-                ordinal_inputs_embeds = self.embed_tokens(safe_input_ids)
-
-                beacon_token_ids = (input_ids - self.config.vocab_size).clamp(
-                    min=0, max=self.beacon_embed_tokens.num_embeddings - 1
-                )
-                beacon_inputs_embeds = self.beacon_embed_tokens(beacon_token_ids)
-                inputs_embeds = torch.where(beacon_mask.unsqueeze(-1), beacon_inputs_embeds, ordinal_inputs_embeds)
+                inputs_embeds = self.embed_tokens(safe_input_ids)
+                if beacon_mask.any():
+                    beacon_token_ids = (input_ids[beacon_mask] - self.config.vocab_size).clamp(
+                        min=0, max=self.beacon_embed_tokens.num_embeddings - 1
+                    )
+                    beacon_inputs_embeds = self.beacon_embed_tokens(beacon_token_ids)
+                    inputs_embeds[beacon_mask] = beacon_inputs_embeds
 
             if position_ids is None:
                 position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device, dtype=torch.long)
