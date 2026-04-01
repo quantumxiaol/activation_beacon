@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple, Union
 
 import torch
+import torch.distributed as dist
 from torch import nn
 from transformers.integrations import is_deepspeed_zero3_enabled
 from transformers.modeling_outputs import BaseModelOutputWithPast
@@ -350,18 +351,25 @@ class BeaconQwen3Model(HFQwen3Model):
                 raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
 
             if inputs_embeds is None:
-                past_key, _, beacon_size, beacon_indices = past_key_values[0]
-                if beacon_size > 0:
-                    cur_beacon_indices = beacon_indices[-input_ids.shape[1] :]
-                    ordinal_input_ids = input_ids[:, cur_beacon_indices == 0]
-                    beacon_input_ids = input_ids[:, cur_beacon_indices > 0]
-                    ordinal_inputs_embeds = self.embed_tokens(ordinal_input_ids)
-                    beacon_input_embeds = self.beacon_embed_tokens(beacon_input_ids - self.config.vocab_size)
-                    inputs_embeds = beacon_input_embeds.new_zeros(*input_ids.shape, beacon_input_embeds.shape[-1])
-                    inputs_embeds[:, cur_beacon_indices == 0] = ordinal_inputs_embeds
-                    inputs_embeds[:, cur_beacon_indices > 0] = beacon_input_embeds
-                else:
-                    inputs_embeds = self.embed_tokens(input_ids)
+                _, _, _, beacon_indices = past_key_values[0]
+                cur_beacon_indices = beacon_indices[-input_ids.shape[1] :]
+                beacon_mask = (cur_beacon_indices > 0).unsqueeze(0).expand(input_ids.shape[0], -1)
+
+                eos_token_id = self.config.eos_token_id
+                if isinstance(eos_token_id, list):
+                    eos_token_id = eos_token_id[0]
+                if eos_token_id is None:
+                    eos_token_id = self.config.vocab_size - 1
+                eos_token_id = int(min(max(eos_token_id, 0), self.config.vocab_size - 1))
+
+                safe_input_ids = input_ids.masked_fill(beacon_mask, eos_token_id)
+                ordinal_inputs_embeds = self.embed_tokens(safe_input_ids)
+
+                beacon_token_ids = (input_ids - self.config.vocab_size).clamp(
+                    min=0, max=self.beacon_embed_tokens.num_embeddings - 1
+                )
+                beacon_inputs_embeds = self.beacon_embed_tokens(beacon_token_ids)
+                inputs_embeds = torch.where(beacon_mask.unsqueeze(-1), beacon_inputs_embeds, ordinal_inputs_embeds)
 
             if position_ids is None:
                 position_ids = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device, dtype=torch.long)
@@ -528,8 +536,26 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
             skip_last=beacon_skip_last,
         )
 
-        while not self.memory.finish:
-            input_ids, attention_mask, position_ids, past_key_values, labels = self.memory.step()
+        outputs = None
+        while True:
+            local_has_step = not self.memory.finish
+            global_has_step = local_has_step
+            if dist.is_available() and dist.is_initialized():
+                has_step_tensor = torch.tensor(
+                    [1 if local_has_step else 0],
+                    dtype=torch.int32,
+                    device=self.memory._device,
+                )
+                dist.all_reduce(has_step_tensor, op=dist.ReduceOp.MAX)
+                global_has_step = bool(has_step_tensor.item())
+
+            if not global_has_step:
+                break
+
+            input_ids, attention_mask, position_ids, past_key_values, labels, is_dummy_step = self.memory.step(
+                force_dummy=not local_has_step,
+                return_dummy_flag=True,
+            )
             outputs = self._native_forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -546,9 +572,13 @@ class Qwen3ForCausalLM(HFQwen3ForCausalLM):
                     "Beacon forward requires `past_key_values`, but got None. "
                     "Ensure `use_cache=True` in beacon mode."
                 )
-            self.memory.update_memory(outputs.past_key_values)
-            if labels is not None:
+            if not is_dummy_step:
+                self.memory.update_memory(outputs.past_key_values)
+            if (not is_dummy_step) and labels is not None:
                 self.memory.update_loss(outputs.batch_loss, (labels != -100).sum(-1))
+
+        if outputs is None:
+            raise RuntimeError("Beacon forward did not run any step. Check input batch length and memory state.")
 
         return self.memory.output(outputs)
 

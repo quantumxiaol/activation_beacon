@@ -85,6 +85,11 @@ class Memory(torch.nn.Module):
         # compression ratio for the unfinished window
         self._interleave_compression_ratio = None
         self._beacon_indices = None
+        # cache sampled ratio for deterministic step-random behavior within one batch
+        self._step_ratio_cache = {}
+        # latest real-step template used to synthesize dummy steps for rank alignment
+        self._dummy_step_template = None
+        self._dummy_labels = None
 
         self.all_input_ids = None
         self.all_attention_mask = None
@@ -243,7 +248,10 @@ class Memory(torch.nn.Module):
                 beacon_ratio = self._compression_ratio
 
         elif ratio_mix == "step-random":
-            beacon_ratio = self.rng.choice(beacon_ratio).tolist()
+            cache_key = (start_idx, end_idx, self._step_idx)
+            if cache_key not in self._step_ratio_cache:
+                self._step_ratio_cache[cache_key] = self.rng.choice(beacon_ratio).tolist()
+            beacon_ratio = self._step_ratio_cache[cache_key]
         
         elif ratio_mix == "sequence":
             if self._compression_ratio is None:
@@ -270,7 +278,35 @@ class Memory(torch.nn.Module):
 
         return beacon_ratio
 
-    def step(self):
+    def _set_dummy_step_template(self, input_ids, attention_mask, position_ids, past_key_values, labels):
+        self._dummy_step_template = (
+            input_ids,
+            attention_mask,
+            position_ids,
+            past_key_values,
+        )
+        if labels is None:
+            self._dummy_labels = None
+        else:
+            self._dummy_labels = labels.new_full(labels.shape, -100)
+
+    def _make_dummy_step(self, return_dummy_flag=False):
+        if self._dummy_step_template is None:
+            raise RuntimeError(
+                "Dummy step requested before any real beacon step. "
+                "This usually indicates an empty local batch on some ranks."
+            )
+
+        input_ids, attention_mask, position_ids, past_key_values = self._dummy_step_template
+        labels = self._dummy_labels
+        if return_dummy_flag:
+            return input_ids, attention_mask, position_ids, past_key_values, labels, True
+        return input_ids, attention_mask, position_ids, past_key_values, labels
+
+    def step(self, force_dummy=False, return_dummy_flag=False):
+        if force_dummy:
+            return self._make_dummy_step(return_dummy_flag=return_dummy_flag)
+
         # parallel does not support stride < window
         # parallel does not support non-compression
         # the input_ids is not long enough for parallel
@@ -385,11 +421,15 @@ class Memory(torch.nn.Module):
 
             # NOTE: update _beacon_indices so that the next-token logits can be properly sliced out in self.output()
             self._beacon_indices = beacon_indices
-            
-            return input_ids, attention_mask, position_ids, past_key_values, labels
+            step_outputs = (input_ids, attention_mask, position_ids, past_key_values, labels)
 
         else:
-            return self._step()
+            step_outputs = self._step()
+
+        self._set_dummy_step_template(*step_outputs)
+        if return_dummy_flag:
+            return (*step_outputs, False)
+        return step_outputs
 
     def _step(self, ignore_memory=False):
         """
